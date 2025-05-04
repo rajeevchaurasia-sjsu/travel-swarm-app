@@ -1,0 +1,93 @@
+version: '3.8'
+
+services:
+  # --- Message Queue Service --- # <--- ADDED FOR MQ
+  rabbitmq:
+    image: rabbitmq:3.13-management
+    container_name: travelswarm_rabbitmq
+    ports:
+      - "5672:5672"   # AMQP port for services
+      - "15672:15672" # Management UI port (access via browser)
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    networks:
+      - travelswarm_network
+
+  # --- Database Service ---
+  postgres:
+    image: postgres:16
+    container_name: travelswarm_postgres
+    environment:
+      POSTGRES_DB: travelswarm_db        # Database name
+      POSTGRES_USER: root              # Database user
+      POSTGRES_PASSWORD: password        # Database password
+    ports:
+      - "5432:5432" # Map local port 5432 to container port 5432
+    volumes:
+      - postgres_data:/var/lib/postgresql/data # Persist data outside the container
+    networks:
+      - travelswarm_network
+
+  # --- Python Agent Service ---
+  agent_service:
+    build:
+      context: ./agent_service # Specifies the directory containing the Dockerfile
+      dockerfile: Dockerfile
+    container_name: travelswarm_agent_service
+    environment:
+      - PYTHONUNBUFFERED=1 # Ensures Python prints output directly to logs
+      - RABBITMQ_HOST=${RABBITMQ_HOST}
+      - RABBITMQ_PORT=${RABBITMQ_PORT}
+      - RABBITMQ_USER=${RABBITMQ_USER}
+      - RABBITMQ_PASS=${RABBITMQ_PASS}
+      - PLANNING_REQUEST_QUEUE=${PLANNING_REQUEST_QUEUE}
+      - RESULTS_QUEUE=${RESULTS_QUEUE}
+      - GOOGLE_CLOUD_PROJECT=${GOOGLE_CLOUD_PROJECT}
+      - GOOGLE_API_KEY=${GOOGLE_API_KEY}
+      - SERPER_API_KEY=${SERPER_API_KEY}
+    volumes:
+      - ./agent_service:/app # Mount local code into container for development (reflects changes)
+      - ~/.config/gcloud:/root/.config/gcloud
+    depends_on:
+      - postgres
+      - rabbitmq
+    networks:
+      - travelswarm_network
+    ports:
+      - "5001:5001" # Map local port 5001 to container port 5001 for REST API
+    # command: python app.py # Command will be set in Dockerfile or here if needed
+
+  # --- Spring Boot Service ---
+  travel-swarm:
+    build:
+      context: ./travelSwarm # Specifies the directory containing Spring Boot code & Dockerfile
+      dockerfile: Dockerfile # We will create this Dockerfile later
+    container_name: travelswarm_spring_boot
+    environment:
+      # Environment variables for Spring Boot, e.g., DB connection details
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/travelswarm_db # Use service name 'postgres'
+      - SPRING_DATASOURCE_USERNAME=root
+      - SPRING_DATASOURCE_PASSWORD=password
+      # Add Telegram Bot Token/Username later
+    volumes:
+      - ./travelSwarm:/app # Mount local code (optional, depends on build process)
+    depends_on:
+      - postgres
+      - agent_service
+      - rabbitmq
+    networks:
+      - travelswarm_network
+    ports:
+      - "8080:8080" # Map local port 8080 to container port 8080 (default for Spring Boot)
+    # command: TBD # Command to run Spring Boot app (often handled by Dockerfile)
+
+
+# --- Shared Network ---
+networks:
+  travelswarm_network:
+    driver: bridge
+
+# --- Persistent Volume for Database ---
+volumes:
+  postgres_data:
