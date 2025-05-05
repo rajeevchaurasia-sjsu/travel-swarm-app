@@ -4,8 +4,10 @@ import time
 import json
 import os
 import traceback
+import functools
 
 from src.crew import run_hierarchical_travel_crew
+from src.models import FinalItinerary
 
 # --- RabbitMQ Publisher Helper ---
 def publish_message(config, queue_name, message_body, correlation_id=None):
@@ -48,7 +50,7 @@ def publish_message(config, queue_name, message_body, correlation_id=None):
             print("Publisher: Connection closed.")
 
 # --- RabbitMQ Consumer Callback ---
-def planning_request_callback(ch, method, properties, body):
+def planning_request_callback(ch, method, properties, body, llm_instance):
     """Callback function when a message is received from PLANNING_REQUEST_QUEUE."""
     thread_id = threading.get_ident()
     correlation_id = properties.correlation_id # Get correlation ID if sent
@@ -84,18 +86,25 @@ def planning_request_callback(ch, method, properties, body):
         print("     Input validation passed.")
 
         # 3. Run CrewAI Logic
-        if run_hierarchical_travel_crew:
+        if run_hierarchical_travel_crew and llm_instance:
             print("     Calling run_hierarchical_travel_crew...")
-            itinerary_result = run_hierarchical_travel_crew(message_data)
+            itinerary_result = run_hierarchical_travel_crew(message_data, llm_instance)
             print("     run_hierarchical_travel_crew finished.")
             # Prepare result message (assuming crew returns string or dict/list)
-            if isinstance(itinerary_result, (dict, list)):
-                 result_message = itinerary_result
+            if isinstance(itinerary_result, FinalItinerary):  # Check if it's the Pydantic model
+                print("     Crew returned Pydantic model, converting to dict.")
+                # Convert Pydantic model to dict for JSON serialization
+                result_message = itinerary_result.model_dump(mode='json')  # Use model_dump for Pydantic v2
+            elif isinstance(itinerary_result, (dict, list)):
+                print("     Crew returned dict/list.")
+                result_message = itinerary_result  # Already suitable for JSON
             else:
-                 result_message = {"itinerary_suggestion": str(itinerary_result)}
+                # Fallback if it's still a string or other type
+                print("     Crew returned string/other, wrapping.")
+                result_message = {"itinerary_suggestion_raw": str(itinerary_result)}
             processed_ok = True
         else:
-            raise RuntimeError("Crew execution function not available (failed import/init).")
+            raise RuntimeError("Crew execution function not available.")
 
     except json.JSONDecodeError:
         error_msg = f"Failed to decode JSON: {body}"
@@ -113,14 +122,13 @@ def planning_request_callback(ch, method, properties, body):
 
     # 4. Publish Result (Success or Error)
     try:
-        result_json = json.dumps(result_message)
+        result_json = json.dumps(result_message, indent=2)
         print(f"     Publishing result to queue '{mq_config['RESULTS_QUEUE']}' (CorrID: {correlation_id})...")
         # Pass necessary config items to publisher
         publish_config = {k: mq_config[k] for k in ['RABBITMQ_HOST', 'RABBITMQ_PORT', 'RABBITMQ_USER', 'RABBITMQ_PASS']}
         publish_message(publish_config, mq_config['RESULTS_QUEUE'], result_json, correlation_id)
     except Exception as pub_e:
         print(f" [!] CRITICAL: Failed to publish result to queue: {pub_e}")
-        # Decide how to handle this - maybe try Nacking the original message later?
 
     # 5. Acknowledge Original Message
     # Acknowledge even if processing failed but we published an error message back
@@ -132,7 +140,7 @@ def planning_request_callback(ch, method, properties, body):
 
 
 # --- RabbitMQ Consumer Loop --- (Keep start_consuming as before)
-def start_consuming(config):
+def start_consuming(config, llm_instance):
     """Connects to RabbitMQ and starts consuming messages from a queue."""
     thread_id = threading.get_ident()
     queue_name = config['REQUEST_QUEUE']
@@ -164,7 +172,8 @@ def start_consuming(config):
             print(f"Consumer ({thread_id}): [*] Waiting for messages on queue '{queue_name}'.")
             channel.basic_qos(prefetch_count=1)
             # Use the updated callback
-            channel.basic_consume(queue=queue_name, on_message_callback=planning_request_callback)
+            on_message_callback = functools.partial(planning_request_callback, llm_instance=llm_instance)
+            channel.basic_consume(queue=queue_name, on_message_callback=on_message_callback)
             channel.start_consuming()
 
         except pika.exceptions.AMQPConnectionError as e:

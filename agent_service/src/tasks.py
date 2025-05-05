@@ -1,6 +1,7 @@
 import json # Added for dumping preferences cleanly
 from textwrap import dedent # Helper to remove indentation from multi-line strings
 from crewai import Task
+from .models import FinalItinerary
 
 print("Loading Tasks definition...") # Confirm module load
 
@@ -43,7 +44,7 @@ def create_planning_task(manager_agent, user_data):
     # Define the single high-level task for the manager agent
     planning_task = Task(
         description=dedent(f"""
-            **Goal:** Create a detailed, optimized, and coherent day-by-day travel itinerary.
+            **Goal:** Create a detailed, optimized, and coherent day-by-day travel itinerary JSON object.
 
             **Inputs:**
             * Destination: {destination}
@@ -53,53 +54,21 @@ def create_planning_task(manager_agent, user_data):
             * User Preferences: {preferences_str}
 
             **Process:**
-            1.  **Delegate:** Identify necessary information (attractions, food, stays, transport) and delegate tasks to specialist agents (Attraction Specialist, Culinary Guide, Accommodation Advisor, Transport Specialist) providing them with relevant criteria based on the user inputs.
-            2.  **Analyze Results:** Receive and critically evaluate the suggestions provided by the specialist agents.
-            3.  **Verify & Optimize:** Use available tools (Distance/Time, Web Search, Location Search) to:
-                * Verify the feasibility of activities (e.g., check opening hours via web search if possible).
-                * Estimate travel times between suggested locations for each day using appropriate transport modes.
-                * Group activities geographically to minimize unnecessary travel.
-                * Ensure suggestions align with budget and interests.
-            4.  **Synthesize:** Compile the verified and optimized information into a structured day-by-day itinerary. Ensure a logical flow between activities.
-            5.  **Format Output:** Present the final itinerary clearly, following the format specified in 'expected_output'. Include brief descriptions, logistical notes (like travel time estimates), and meal suggestions for each day.
+            1. Delegate sub-tasks to specialist agents...
+            2. Analyze specialist results...
+            3. Verify & Optimize using tools (check travel times, proximity, feasibility)...
+            4. Synthesize all information into the final itinerary structure defined by the 'FinalItinerary' model. Fill in all relevant fields accurately.
         """),
+        # Simplified expected output, focusing on content quality
         expected_output=dedent(f"""
-            A complete, optimized, day-by-day itinerary for {duration_calc_str} in {destination}, formatted as a single block of text.
-            The itinerary must be practical, considering travel times between locations (verified using tools).
-            It must align with the user's specified budget, interests, and preferences.
-
-            **Output Format Example:**
-
-            **Trip Overview:**
-            * Destination: {destination}
-            * Duration: {duration_calc_str} {('('+start_date+' to '+end_date+')') if start_date and end_date else ''}
-            * Budget: {budget}
-            * Interests: {interests_str}
-
-            **Day 1: [Theme for Day 1, e.g., Arrival & Historical Center]**
-            * **Morning (e.g., 9AM-12PM):**
-                * [Activity/Attraction Name]: [Brief Description & Relevance to Interests].
-                * *Travel Note:* [e.g., Walk (10 min) from Hotel]
-            * **Lunch (e.g., 12:30PM):**
-                * [Restaurant Suggestion]: [Type/Description, e.g., Casual Bistro near Attraction].
-            * **Afternoon (e.g., 2PM-5PM):**
-                * [Activity/Attraction Name]: [Brief Description].
-                * *Travel Note:* [e.g., Metro Line X (20 min) from Lunch]
-            * **Dinner (e.g., 7PM):**
-                * [Restaurant Suggestion]: [Type/Description].
-            * **Accommodation:** [Check-in / Name / Area]
-            * **Daily Transport Tip:** [e.g., Consider a T-10 Metro pass.]
-
-            **Day 2: [Theme for Day 2]**
-            * (Follow similar structure with activities, meals, and travel notes for Morning, Lunch, Afternoon, Dinner)
-
-            **(Repeat structure for all {duration_calc_str})**
-
-            **General Notes:**
-            * [Include 1-2 helpful general tips, e.g., booking advice, currency, power adapter type if known.]
-        """),
-        agent=manager_agent # Assign the task to the Manager Agent instance
+                A complete and logically structured travel plan for {duration_calc_str} in {destination}.
+                The plan must be practical, considering realistic travel times between activities.
+                It must align with the user's budget, interests, and preferences provided in the input.
+                All fields in the required output structure should be populated appropriately.
+            """),
+        agent=manager_agent, # Assign the task to the Manager Agent instance
+        output_pydantic = FinalItinerary
     )
 
     print("Planning task instance created.")
-    return planning_task # Return the single, high-level task object
+    return planning_task
