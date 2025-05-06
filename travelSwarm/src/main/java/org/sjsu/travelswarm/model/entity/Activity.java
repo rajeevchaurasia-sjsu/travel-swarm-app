@@ -1,9 +1,10 @@
-package org.sjsu.travelswarm.model;
+package org.sjsu.travelswarm.model.entity;
 
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 import lombok.NoArgsConstructor;
+import org.sjsu.travelswarm.model.enums.ActivityType;
 
 import java.time.LocalDateTime;
 
@@ -23,16 +24,18 @@ public class Activity {
 
     private String name;
 
-    @Column(name = "in_time")
-    private LocalDateTime inTime;
-    @Column(name = "out_time")
-    private LocalDateTime outTime;
+    @Column(name = "start_time")
+    private LocalDateTime startTime;
+    @Column(name = "end_time")
+    private LocalDateTime endTime;
 
     private String location;
     private String price;
+
+    @Column(length = 1024)
     private String notes;
 
-    // Transit details
+    // Transit specific details (populated if type is TRANSPORTATION)
     @Column(name = "from_location")
     private String fromLocation;
     @Column(name = "transport_mode")
@@ -40,7 +43,7 @@ public class Activity {
     private String distance;
     private String duration;
 
-    @ManyToOne
+    @ManyToOne(fetch = FetchType.LAZY) // Added LAZY fetch
     @JoinColumn(name = "itinerary_day_id")
     private ItineraryDay itineraryDay;
 }

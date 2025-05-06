@@ -27,14 +27,20 @@ repositories {
 dependencies {
     implementation 'org.springframework.boot:spring-boot-starter-web'
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
-    implementation 'com.github.gwenn:sqlite-dialect:0.1.4'
     implementation 'com.fasterxml.jackson.core:jackson-databind'
-    implementation 'org.telegram:telegrambots:6.9.7.1' // Telegram Bot
-    implementation 'org.xerial:sqlite-jdbc:3.49.1.0' // SQLite JDBC
     compileOnly 'org.projectlombok:lombok'
     annotationProcessor 'org.projectlombok:lombok'
     testImplementation 'org.springframework.boot:spring-boot-starter-test'
     testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+    // For RabbitMQ integration
+    implementation 'org.springframework.boot:spring-boot-starter-amqp'
+    // For PostgreSQL database connection
+    runtimeOnly 'org.postgresql:postgresql'
+    implementation 'org.springframework.boot:spring-boot-starter-validation'
+    // REST calls to the Python NLU service
+    implementation 'org.springframework.boot:spring-boot-starter-webflux'
+    // For Telegram Bot integration
+    implementation 'org.telegram:telegrambots-spring-boot-starter:6.9.7.1'
 }
 
 tasks.named('test') {

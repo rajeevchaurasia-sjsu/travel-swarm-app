@@ -1,6 +1,6 @@
 package org.sjsu.travelswarm.repository;
 
-import org.sjsu.travelswarm.model.Itinerary;
+import org.sjsu.travelswarm.model.entity.Itinerary;
 import org.springframework.data.jpa.repository.JpaRepository;
 
 import java.util.List;
