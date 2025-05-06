@@ -1,5 +1,4 @@
 import os
-import json
 import traceback
 
 from crewai_tools import BaseTool, SerperDevTool  # Import BaseTool and a pre-built one
@@ -187,11 +186,9 @@ if not web_search_tool:
 
 
 # --- Instantiate tools for export ---
-# Instantiate AFTER the class definitions
 location_search_tool = LocationSearchTool()
 distance_time_tool = DistanceTimeTool()
 # web_search_tool is instantiated conditionally above
 
 print("Tools loaded.")
 
-# Add more placeholder tools (Weather, Calendar etc.) here if needed
