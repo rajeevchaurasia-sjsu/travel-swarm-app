@@ -1,4 +1,4 @@
-package org.sjsu.travelswarm.dto;
+package org.sjsu.travelswarm.model.dto;
 
 import lombok.Data;
 

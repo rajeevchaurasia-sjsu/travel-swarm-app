@@ -97,11 +97,11 @@ def parse_request_endpoint():
         return jsonify({"error": "Request must be JSON"}), 400
 
     data = request.get_json()
-    user_text = data.get("user_text")
+    user_text = data.get("userText")
 
     if not user_text:
-        print("Error: Missing 'user_text' in request body")
-        return jsonify({"error": "Missing 'user_text' in request body"}), 400
+        print("Error: Missing 'userText' in request body")
+        return jsonify({"error": "Missing 'userText' in request body"}), 400
 
     print(f"Raw text to parse: '{user_text}'")
 

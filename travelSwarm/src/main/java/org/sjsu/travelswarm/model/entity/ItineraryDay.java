@@ -1,4 +1,4 @@
-package org.sjsu.travelswarm.model;
+package org.sjsu.travelswarm.model.entity;
 
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
@@ -6,6 +6,7 @@ import lombok.Data;
 import lombok.NoArgsConstructor;
 
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.List;
 
 @Entity
@@ -20,13 +21,13 @@ public class ItineraryDay {
     private Long id;
 
     private int dayNumber;
-
+    private String theme;
     private LocalDate date;
 
-    @ManyToOne
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "itinerary_id")
     private Itinerary itinerary;
 
     @OneToMany(mappedBy = "itineraryDay", cascade = CascadeType.ALL, orphanRemoval = true)
-        private List<Activity> activities;
+    private List<Activity> activities = new ArrayList<>();
 }
