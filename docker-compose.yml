@@ -63,14 +63,16 @@ services:
       context: ./travelSwarm
       dockerfile: Dockerfile
     container_name: travelswarm_spring_boot
+    env_file:
+      - .env # Load environment variables from .env file
     environment:
       - DB_URL=${DB_URL}
       - DB_USERNAME=${DB_USERNAME}
       - DB_PASSWORD=${DB_PASSWORD}
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
       - TELEGRAM_BOT_USERNAME=${TELEGRAM_BOT_USERNAME}
-    volumes:
-      - ./travelSwarm:/app # Mount local code (optional, depends on build process)
+#    volumes:
+#      - ./travelSwarm:/app # Mount local code (optional, depends on build process)
     depends_on:
       - postgres
       - agent_service

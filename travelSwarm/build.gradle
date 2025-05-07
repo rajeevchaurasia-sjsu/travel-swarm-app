@@ -43,6 +43,10 @@ dependencies {
     implementation 'org.telegram:telegrambots-spring-boot-starter:6.9.7.1'
 }
 
+bootJar {
+    archiveFileName = 'app.jar'
+}
+
 tasks.named('test') {
     useJUnitPlatform()
 }

@@ -26,6 +26,7 @@ public class NLUClientImpl implements NLUClient {
     @Autowired
     public NLUClientImpl(WebClient.Builder webClientBuilder) {
         // Configure WebClient instance
+        log.info("Initializing NLU WebClient for base URL: {}", nluServiceUrl);
         this.webClient = webClientBuilder
                 .baseUrl(nluServiceUrl) // Set base URL for the Python service
                 .defaultHeader(HttpHeaders.CONTENT_TYPE, MediaType.APPLICATION_JSON_VALUE)

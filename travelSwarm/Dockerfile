@@ -23,7 +23,7 @@ RUN echo "Listing contents of /workspace/app/build/libs/ after bootJar:" && \
 FROM eclipse-temurin:17-jre
 
 WORKDIR /app
-COPY --from=build_image /workspace/app/build/libs/*.jar app.jar
+COPY --from=build_image /workspace/app/build/libs/app.jar app.jar
 
 EXPOSE 8082
 ENTRYPOINT ["java", "-jar", "/app/app.jar"]

@@ -36,26 +36,31 @@ public class ConversationService {
      * Main entry point to process text messages from the user (called by Telegram Bot).
      */
     public void processTelegramUpdate(long chatId, String userText) {
-        log.info("Processing message from chatId {}: '{}'", chatId, userText);
+        try {
+            log.info("Processing message from chatId {}: '{}'", chatId, userText);
 
-        // Find the latest active session for this user, or create a new one
-        List<SessionStatus> activeStatuses = List.of(SessionStatus.STARTED, SessionStatus.WAITING_FOR_CLARIFICATION);
-        // Using findFirst... handles cases where multiple rapid messages might create race conditions if not careful
-        PlanningSession session = planningSessionRepository
-                .findFirstByChatIdAndStatusInOrderByUpdatedAtDesc(chatId, activeStatuses)
-                .orElseGet(() -> {
-                    log.info("No active session found for chatId {}. Creating new session.", chatId);
-                    return new PlanningSession(chatId); // Creates session with STARTED status
-                });
+            // Find the latest active session for this user, or create a new one
+            List<SessionStatus> activeStatuses = List.of(SessionStatus.STARTED, SessionStatus.WAITING_FOR_CLARIFICATION);
+            // Using findFirst... handles cases where multiple rapid messages might create race conditions if not careful
+            PlanningSession session = planningSessionRepository
+                    .findFirstByChatIdAndStatusInOrderByUpdatedAtDesc(chatId, activeStatuses)
+                    .orElseGet(() -> {
+                        log.info("No active session found for chatId {}. Creating new session.", chatId);
+                        return new PlanningSession(chatId); // Creates session with STARTED status
+                    });
 
-        // Combine context if needed (advanced) - for now, just use current text
-        // if (session.getStatus() == SessionStatus.WAITING_FOR_CLARIFICATION) { ... }
+            // Combine context if needed (advanced) - for now, just use current text
+            // if (session.getStatus() == SessionStatus.WAITING_FOR_CLARIFICATION) { ... }
 
-        // Call NLU service asynchronously
-        nluClient.parseText(userText)
-                .subscribe(nluResult -> handleNluResult(session, nluResult), // Pass session object
-                        error -> handleError(session.getChatId(), "NLU processing failed", error)
-                );
+            // Call NLU service asynchronously
+            nluClient.parseText(userText)
+                    .subscribe(nluResult -> handleNluResult(session, nluResult), // Pass session object
+                            error -> handleError(session.getChatId(), "NLU processing failed", error)
+                    );
+        } catch (Exception e) {
+            log.error("Error processing Telegram update for chatId {}: {}", chatId, e.getMessage(), e);
+            handleError(chatId, "General error in processing", e);
+        }
     }
 
     /**
