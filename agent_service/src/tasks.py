@@ -59,13 +59,51 @@ def create_planning_task(manager_agent, user_data):
             3. Verify & Optimize using tools (check travel times, proximity, feasibility)...
             4. Synthesize all information into the final itinerary structure defined by the 'FinalItinerary' model. Fill in all relevant fields accurately.
         """),
-        # Simplified expected output, focusing on content quality
         expected_output=dedent(f"""
-                A complete and logically structured travel plan for {duration_calc_str} in {destination}.
-                The plan must be practical, considering realistic travel times between activities.
-                It must align with the user's budget, interests, and preferences provided in the input.
-                All fields in the required output structure should be populated appropriately.
-            """),
+                    A complete, optimized, day-by-day itinerary for {duration_calc_str} in {destination}.
+                    The output MUST be a JSON object that strictly validates against the FinalItinerary Pydantic model.
+                    Specifically, the 'interests' and 'general_notes' fields MUST be lists of strings. For example:
+                    "interests": ["historical sites", "local food"],
+                    "general_notes": ["Book tickets in advance.", "Wear comfortable shoes."]
+                    If there is only one interest or note, it should still be in a list:
+                    "interests": ["biryani"],
+                    "general_notes": ["Check opening hours."]
+                    If there are no interests or notes, provide an empty list:
+                    "interests": [],
+                    "general_notes": []
+
+                    **Output Format Example (Illustrative - adhere to FinalItinerary model):**
+
+                    {{
+                        "destination": "{destination}",
+                        "duration_days": {duration_days if duration_days else 'null'},
+                        "start_date": {json.dumps(start_date)},
+                        "end_date": {json.dumps(end_date)},
+                        "budget": {json.dumps(budget)},
+                        "interests": ["interest1", "interest2"],
+                        "summary": "A brief trip summary...",
+                        "days": [
+                            {{
+                                "day": 1,
+                                "date": {json.dumps(start_date if start_date else "YYYY-MM-DD or null")},
+                                "theme": "Theme for Day 1",
+                                "events": [
+                                    {{
+                                        "type": "attraction",
+                                        "description": "Visit Place X",
+                                        "startTime": "10:00 AM",
+                                        "endTime": "12:00 PM",
+                                        "details": "Some details about Place X"
+                                    }}
+                                    // More events
+                                ]
+                            }}
+                            // More days
+                        ],
+                        "estimatedTotalCost": 500.00,
+                        "general_notes": ["General tip 1.", "General tip 2."]
+                    }}
+                """),
         agent=manager_agent, # Assign the task to the Manager Agent instance
         output_pydantic = FinalItinerary
     )

@@ -37,8 +37,6 @@ dependencies {
     // For PostgreSQL database connection
     runtimeOnly 'org.postgresql:postgresql'
     implementation 'org.springframework.boot:spring-boot-starter-validation'
-    // REST calls to the Python NLU service
-    implementation 'org.springframework.boot:spring-boot-starter-webflux'
     // For Telegram Bot integration
     implementation 'org.telegram:telegrambots-spring-boot-starter:6.9.7.1'
 }

@@ -8,7 +8,6 @@ class ItineraryEvent(BaseModel):
     startTime: Optional[str] = Field(None, description="Approximate start time (e.g., '9:00 AM')")
     endTime: Optional[str] = Field(None, description="Approximate end time (if applicable)")
     details: Optional[str] = Field(None, description="Additional details (e.g., cost, booking info, address)")
-    sourceAgent: Optional[str] = Field(None, description="Which specialist agent provided this info (e.g., FoodAgent)") # Optional tracking
 
 # Define structure for a single day
 class ItineraryDay(BaseModel):
@@ -29,6 +28,6 @@ class FinalItinerary(BaseModel):
     summary: Optional[str] = Field(None, description="A brief overall summary of the trip")
     days: List[ItineraryDay] = Field(description="List of daily plans")
     estimatedTotalCost: Optional[float] = Field(None, description="Optional overall cost estimate")
-    notes: Optional[List[str]] = Field(None, description="Optional list of general travel tips")
+    general_notes: Optional[List[str]] = Field(None, description="Optional list of general travel tips")
 
 print("Pydantic models loaded.")

@@ -13,5 +13,4 @@ public class ItineraryEventDto {
     private String startTime;
     private String endTime;
     private String details;
-    private String sourceAgent;
 }

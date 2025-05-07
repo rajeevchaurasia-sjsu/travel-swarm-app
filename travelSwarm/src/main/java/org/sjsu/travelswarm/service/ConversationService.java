@@ -1,16 +1,19 @@
 package org.sjsu.travelswarm.service;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.sjsu.travelswarm.model.dto.FinalItineraryDto;
+import org.sjsu.travelswarm.model.dto.ItineraryDayDto;
+import org.sjsu.travelswarm.model.dto.ItineraryEventDto;
 import org.sjsu.travelswarm.model.dto.PlanningRequestDto;
 import org.sjsu.travelswarm.model.dto.nlu.NLUResultDto;
+import org.sjsu.travelswarm.model.entity.Itinerary;
 import org.sjsu.travelswarm.model.entity.PlanningSession;
 import org.sjsu.travelswarm.model.enums.SessionStatus;
 import org.sjsu.travelswarm.repository.PlanningSessionRepository;
 import org.sjsu.travelswarm.service.client.NLUClient;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -20,28 +23,40 @@ import java.util.UUID;
 
 @Service
 @Slf4j
-@RequiredArgsConstructor
 public class ConversationService {
 
     private final NLUClient nluClient;
     private final PlanningRequestPublisher planningRequestPublisher;
     private final ObjectMapper objectMapper;
     private final PlanningSessionRepository planningSessionRepository;
+    private final ItineraryService itineraryService;
+    private final TelegramBotService telegramBotService;
 
-    // TODO: Inject ItineraryStorageService for saving final itineraries
-    // TODO: Inject TelegramMessageService for sending replies
-
+    @Autowired
+    public ConversationService(NLUClient nluClient,
+                               PlanningRequestPublisher planningRequestPublisher,
+                               ObjectMapper objectMapper,
+                               PlanningSessionRepository planningSessionRepository,
+                               ItineraryService itineraryService,
+                               @Lazy TelegramBotService telegramBotService) {
+        this.nluClient = nluClient;
+        this.planningRequestPublisher = planningRequestPublisher;
+        this.objectMapper = objectMapper;
+        this.planningSessionRepository = planningSessionRepository;
+        this.itineraryService = itineraryService;
+        this.telegramBotService = telegramBotService;
+    }
 
     /**
      * Main entry point to process text messages from the user (called by Telegram Bot).
      */
+    @Transactional
     public void processTelegramUpdate(long chatId, String userText) {
         try {
             log.info("Processing message from chatId {}: '{}'", chatId, userText);
 
             // Find the latest active session for this user, or create a new one
             List<SessionStatus> activeStatuses = List.of(SessionStatus.STARTED, SessionStatus.WAITING_FOR_CLARIFICATION);
-            // Using findFirst... handles cases where multiple rapid messages might create race conditions if not careful
             PlanningSession session = planningSessionRepository
                     .findFirstByChatIdAndStatusInOrderByUpdatedAtDesc(chatId, activeStatuses)
                     .orElseGet(() -> {
@@ -49,17 +64,11 @@ public class ConversationService {
                         return new PlanningSession(chatId); // Creates session with STARTED status
                     });
 
-            // Combine context if needed (advanced) - for now, just use current text
-            // if (session.getStatus() == SessionStatus.WAITING_FOR_CLARIFICATION) { ... }
-
-            // Call NLU service asynchronously
-            nluClient.parseText(userText)
-                    .subscribe(nluResult -> handleNluResult(session, nluResult), // Pass session object
-                            error -> handleError(session.getChatId(), "NLU processing failed", error)
-                    );
+            NLUResultDto nluResult = nluClient.parseText(userText);
+            handleNluResult(session, nluResult);
         } catch (Exception e) {
-            log.error("Error processing Telegram update for chatId {}: {}", chatId, e.getMessage(), e);
-            handleError(chatId, "General error in processing", e);
+            log.error("Error during NLU call or initial handling for chatId {}: {}", chatId, e.getMessage(), e);
+            handleError(chatId, "NLU processing or initial handling failed", e);
         }
     }
 
@@ -121,59 +130,66 @@ public class ConversationService {
             sendTelegramResponse(chatId, "Okay, planning your trip to " + planningRequest.getDestination() + "... I'll send the itinerary when it's ready!");
 
         } else {
-            // Handle cases where NLU returns COMPLETE but mandatory info still missing (shouldn't happen with good NLU prompt)
-            // Or handle other unexpected statuses
-            log.warn("NLU status is COMPLETE but mandatory info might be missing, or status is unexpected ('{}') for chatId {}", nluResult.getStatus(), chatId);
-            session.setStatus(SessionStatus.WAITING_FOR_CLARIFICATION); // Revert to clarification
-            session.setLastClarificationQuestion("Sorry, I still need a bit more information. Please provide the destination and duration/dates.");
+            log.warn("NLU status ('{}') not 'COMPLETE' or mandatory info still missing for chatId {}", nluResult.getStatus(), chatId);
+            session.setStatus(SessionStatus.WAITING_FOR_CLARIFICATION);
+            String clarification = (nluResult.getClarificationQuestion() != null && !nluResult.getClarificationQuestion().isBlank())
+                    ? nluResult.getClarificationQuestion()
+                    : "I'm missing some key details (like destination or duration). Could you please provide them?";
+            session.setLastClarificationQuestion(clarification);
             planningSessionRepository.save(session);
-            sendTelegramResponse(chatId, session.getLastClarificationQuestion());
+            sendTelegramResponse(chatId, clarification);
         }
     }
 
     /**
      * Handles the final itinerary result received from the results queue.
-     * (This method will be called by PlanningResultListener).
      */
-    @Transactional // Make DB operations atomic
+    @Transactional
     public void handlePlanningResult(String correlationId, FinalItineraryDto itineraryDto) {
         log.info("Received final itinerary for Correlation ID: {}", correlationId);
 
-        // Find the session using the correlation ID
         Optional<PlanningSession> sessionOpt = planningSessionRepository.findByCorrelationId(correlationId);
 
         if (sessionOpt.isPresent()) {
             PlanningSession session = sessionOpt.get();
             long chatId = session.getChatId();
-            log.info("Found matching PlanningSession with ID {} for Chat ID {}", session.getId(), chatId);
+            log.info("ConversationService: Found PlanningSession ID {} for Chat ID {} (CorrID: {})",
+                    session.getId(), chatId, correlationId);
 
-            // Check if result indicates an error from the agent service
-            boolean processingError = itineraryDto.getDays() == null && itineraryDto.getSummary() == null && itineraryDto.getGeneral_notes().stream().anyMatch(s -> s.contains("error")); // Basic error check
+            boolean processingError = false;
+            // Check if DTO indicates an error from Python side (e.g. if it's a raw string with "error")
+            if (itineraryDto.getDestination() == null && (itineraryDto.getDays() == null || itineraryDto.getDays().isEmpty())) {
+                if (itineraryDto.getSummary() != null && itineraryDto.getSummary().toLowerCase().contains("error")) {
+                    processingError = true;
+                } else if (itineraryDto.getGeneral_notes() != null && itineraryDto.getGeneral_notes().stream().anyMatch(s -> s.toLowerCase().contains("error"))) {
+                    processingError = true;
+                } else {
+                    // If critical fields are missing, assume it's an error structure rather than a valid itinerary
+                    log.warn("Itinerary DTO seems to be an error fallback for CorrID {}. DTO: {}", correlationId, itineraryDto);
+                    processingError = true; // Treat as error if key fields missing
+                }
+            }
 
             if (processingError) {
                 session.setStatus(SessionStatus.FAILED);
-                log.error("Itinerary generation failed for Correlation ID {}. Error details might be in DTO: {}", correlationId, itineraryDto);
-                // TODO: Extract specific error from DTO if Python service sends it structured
-                sendTelegramResponse(chatId, "Sorry, I encountered an error while generating the itinerary. Please try again later.");
+                log.error("Itinerary generation reported failure for Correlation ID {}. DTO: {}", correlationId, itineraryDto);
+                sendTelegramResponse(chatId, "Sorry, I encountered an error while generating the details of your itinerary. Please try again.");
             } else {
-                // --- TODO: Save the received itinerary ---
-                // 1. Create/Inject ItineraryStorageService
-                // 2. Call itineraryStorageService.saveItinerary(itineraryDto, String.valueOf(chatId));
-                // 3. Get the saved Itinerary entity's ID
-                Long savedItineraryId = null; // Placeholder = itineraryStorageService.saveItinerary(...);
-                log.warn("TODO: Implement ItineraryStorageService to save the received itinerary DTO. Placeholder ID: {}", savedItineraryId);
-                session.setFinalItineraryId(savedItineraryId); // Link session to saved itinerary
-                // ----------------------------------------
+                try {
+                    Itinerary savedItinerary = itineraryService.storeItinerary(itineraryDto, String.valueOf(chatId));
+                    log.info("Itinerary DTO stored successfully with DB ID: {}", savedItinerary.getId());
+                    session.setFinalItineraryId(savedItinerary.getId());
+                    session.setStatus(SessionStatus.COMPLETED);
+                    log.info("Planning session COMPLETED for Correlation ID {}", correlationId);
 
-                session.setStatus(SessionStatus.COMPLETED); // Mark session as completed
-                log.info("Planning session completed successfully for Correlation ID {}", correlationId);
-
-                // --- TODO: Format and Send Itinerary ---
-                String formattedItinerary = formatItineraryForTelegram(itineraryDto);
-                sendTelegramResponse(chatId, formattedItinerary);
-                // --------------------------------------
+                    String formattedItinerary = formatItineraryForTelegram(itineraryDto);
+                    sendTelegramResponse(chatId, formattedItinerary);
+                } catch (Exception e) {
+                    log.error("Failed to store or send itinerary for Correlation ID: {}. Error: {}", correlationId, e.getMessage(), e);
+                    session.setStatus(SessionStatus.FAILED);
+                    sendTelegramResponse(chatId, "I found an itinerary, but there was an issue processing or saving it. Please try again.");
+                }
             }
-            // Save the final status of the session
             planningSessionRepository.save(session);
 
         } else {
@@ -181,20 +197,68 @@ public class ConversationService {
         }
     }
 
-    // ...(Keep sendTelegramResponse, handleError, formatItineraryForTelegram placeholders)...
     private void sendTelegramResponse(long chatId, String text) {
-        log.warn("TODO: Implement sending message via Telegram Bot - ChatID: {}, Message: '{}'", chatId, text);
+        telegramBotService.sendTextMessage(chatId, text);
     }
-    private void handleError(long chatId, String context, Throwable error) {
-        log.error("Error during async processing for chatId {}: Context='{}', Error='{}'", chatId, context, error.getMessage(), error);
-        sendTelegramResponse(chatId, "Sorry, something went wrong while processing your request. Please try again later.");
+
+    public void handleError(long chatId, String contextMessage, Throwable error) {
+        log.error("Handling error for chatId {}: Context='{}', Error='{}'", chatId, contextMessage, error.getMessage(), error);
+        // Attempt to find an active session to mark as FAILED, if appropriate
+        List<SessionStatus> activeStatuses = List.of(SessionStatus.STARTED, SessionStatus.WAITING_FOR_CLARIFICATION, SessionStatus.PROCESSING);
+        planningSessionRepository.findFirstByChatIdAndStatusInOrderByUpdatedAtDesc(chatId, activeStatuses)
+                .ifPresent(session -> {
+                    session.setStatus(SessionStatus.FAILED);
+                    // Avoid overwriting a specific NLU clarification question with a generic error
+                    if (session.getLastClarificationQuestion() == null || !session.getLastClarificationQuestion().contains("issue understanding that")) {
+                        session.setLastClarificationQuestion("Error: " + contextMessage);
+                    }
+                    planningSessionRepository.save(session);
+                });
+        sendTelegramResponse(chatId, "Sorry, something went wrong while processing your request \\(`" + contextMessage + "`\\)\\. Please try again later\\.");
     }
+
     private String formatItineraryForTelegram(FinalItineraryDto dto) {
-        log.warn("TODO: Implement proper formatting for FinalItineraryDto");
-        try {
-            return "Your itinerary is ready!\n```json\n" +
-                    objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(dto) +
-                    "\n```";
-        } catch (JsonProcessingException e) { return "Error formatting itinerary."; }
+        log.info("Formatting FinalItineraryDto for Telegram output for destination: {}", dto.getDestination());
+        StringBuilder sb = new StringBuilder();
+        sb.append("*Trip to ").append(dto.getDestination()).append("*\n\n");
+        if (dto.getSummary() != null && !dto.getSummary().isBlank()) {
+            sb.append("_").append(dto.getSummary()).append("_\n\n");
+        }
+        sb.append("*Duration:* ").append(dto.getDurationDays() != null ? dto.getDurationDays() + " days" : "Not specified").append("\n");
+        if (dto.getStartDate() != null) sb.append("*Start Date:* ").append(dto.getStartDate()).append("\n");
+        if (dto.getEndDate() != null) sb.append("*End Date:* ").append(dto.getEndDate()).append("\n");
+        if (dto.getBudget() != null) sb.append("*Budget:* ").append(dto.getBudget()).append("\n");
+        if (dto.getInterests() != null && !dto.getInterests().isEmpty()) {
+            sb.append("*Interests:* ").append(String.join(", ", dto.getInterests())).append("\n");
+        }
+        sb.append("\n");
+
+        if (dto.getDays() != null) {
+            for (ItineraryDayDto day : dto.getDays()) {
+                sb.append("*Day ").append(day.getDay()).append(":* ");
+                if (day.getTheme() != null) sb.append("_").append(day.getTheme()).append("_");
+                sb.append("\n");
+                if (day.getEvents() != null) {
+                    for (ItineraryEventDto event : day.getEvents()) {
+                        sb.append("  • *").append(event.getType() != null ? event.getType().toUpperCase() : "EVENT").append(":* ");
+                        sb.append(event.getDescription());
+                        if (event.getStartTime() != null) sb.append(" \\(Around: ").append(event.getStartTime()).append("\\)");
+                        if (event.getDetails() != null && !event.getDetails().isBlank()) {
+                            sb.append("\n    _Details:_ ").append(event.getDetails().replace("\n", "\n    "));
+                        }
+                        sb.append("\n");
+                    }
+                }
+                sb.append("\n");
+            }
+        }
+        if (dto.getGeneral_notes() != null && !dto.getGeneral_notes().isEmpty()) {
+            sb.append("*General Notes:*\n");
+            for (String note : dto.getGeneral_notes()) {
+                sb.append("• ").append(note).append("\n");
+            }
+        }
+
+        return sb.toString();
     }
 }
