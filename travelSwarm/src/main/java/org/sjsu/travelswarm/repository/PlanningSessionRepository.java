@@ -20,4 +20,6 @@ public interface PlanningSessionRepository extends JpaRepository<PlanningSession
     // Find any active (not completed/failed) session for a chat ID
     Optional<PlanningSession> findFirstByChatIdAndStatusInOrderByUpdatedAtDesc(Long chatId, List<SessionStatus> activeStatuses);
 
+    Optional<PlanningSession> findByChatId(Long chatId);
+
 }

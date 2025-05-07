@@ -26,24 +26,32 @@ public class Activity {
 
     @Column(name = "start_time")
     private LocalDateTime startTime;
+    
     @Column(name = "end_time")
     private LocalDateTime endTime;
 
     private String location;
-    private String price;
-
-    @Column(length = 1024)
+    private String cost;
+    private String bookingInfo;
+    private String website;
     private String notes;
 
+    @Column(length = 1024)
+    private String details;
+
     // Transit specific details (populated if type is TRANSPORTATION)
-    @Column(name = "from_location")
-    private String fromLocation;
+    @Column(name = "travel_time")
+    private String travelTime;
+    
     @Column(name = "transport_mode")
     private String transportMode;
+    
     private String distance;
-    private String duration;
 
-    @ManyToOne(fetch = FetchType.LAZY) // Added LAZY fetch
+    @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "itinerary_day_id")
     private ItineraryDay itineraryDay;
+
+    @Column(name = "opening_hours")
+    private String openingHours;
 }

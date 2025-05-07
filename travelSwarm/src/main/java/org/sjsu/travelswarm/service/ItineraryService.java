@@ -22,6 +22,7 @@ import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.stream.Collectors;
 
 @Service
 @Slf4j
@@ -123,15 +124,20 @@ public class ItineraryService {
                 break;
         }
 
-        activity.setNotes(eventDto.getDetails());
+        // Map all fields from DTO to Activity
+        activity.setLocation(eventDto.getLocation());
+        activity.setCost(eventDto.getCost());
+        activity.setBookingInfo(eventDto.getBookingInfo());
+        activity.setWebsite(eventDto.getWebsite());
+        activity.setNotes(eventDto.getNotes());
+        activity.setOpeningHours(eventDto.getOpeningHours());
+        activity.setDetails(eventDto.getDetails());
 
-        if (StringUtils.hasText(eventDto.getDetails()) && eventDto.getDetails().toLowerCase().contains("address:")) {
-            try {
-                String addressPart = eventDto.getDetails().substring(eventDto.getDetails().toLowerCase().indexOf("address:") + "address:".length()).trim();
-                activity.setLocation(addressPart.split("\n")[0]);
-            } catch (Exception e) {
-                log.warn("Could not parse address from details: {}", eventDto.getDetails());
-            }
+        // Transport specific fields
+        if (activity.getType() == ActivityType.TRANSPORTATION) {
+            activity.setTravelTime(eventDto.getTravelTime());
+            activity.setTransportMode(eventDto.getTransportMode());
+            activity.setDistance(eventDto.getDistance());
         }
 
         log.debug("Mapped eventDto to Activity: {}", activity.getName());
@@ -161,9 +167,85 @@ public class ItineraryService {
         return null;
     }
 
-    // Method to retrieve itineraries
-    public List<Itinerary> getItinerariesByUser(String userId) {
-        log.info("Fetching itineraries for user {}", userId);
-        return itineraryRepository.findByUserId(userId);
+    public List<Itinerary> getItinerariesForUser(Long chatId) {
+        log.info("Fetching itineraries for chat ID: {}", chatId);
+        String userId = String.valueOf(chatId);
+        return itineraryRepository.findByUserIdOrderByIdDesc(userId);
+    }
+
+    public FinalItineraryDto convertEntityToDto(Itinerary itinerary) {
+        if (itinerary == null) {
+            return null;
+        }
+        log.debug("Converting Itinerary entity ID {} to DTO", itinerary.getId());
+
+        FinalItineraryDto dto = new FinalItineraryDto();
+        dto.setDestination(itinerary.getCity());
+        dto.setDurationDays(itinerary.getDurationDays());
+        dto.setStartDate(itinerary.getStartDate() != null ? itinerary.getStartDate().toString() : null);
+        dto.setEndDate(itinerary.getEndDate() != null ? itinerary.getEndDate().toString() : null);
+        dto.setBudget(itinerary.getBudget());
+        dto.setInterests(itinerary.getInterests() != null ? new ArrayList<>(itinerary.getInterests()) : new ArrayList<>());
+        dto.setSummary(itinerary.getTripTitle()); // Use tripTitle as summary
+        dto.setEstimatedTotalCost(itinerary.getEstimatedTotalCost());
+        dto.setGeneral_notes(itinerary.getGeneralNotes() != null ? new ArrayList<>(itinerary.getGeneralNotes()) : new ArrayList<>());
+
+        if (itinerary.getDays() != null) {
+            List<ItineraryDayDto> dayDtos = itinerary.getDays().stream()
+                    .map(this::convertDayEntityToDto) // Map each day entity
+                    .collect(Collectors.toList());
+            dto.setDays(dayDtos);
+        } else {
+            dto.setDays(new ArrayList<>());
+        }
+
+        return dto;
+    }
+
+    private ItineraryDayDto convertDayEntityToDto(ItineraryDay dayEntity) {
+        if (dayEntity == null) {
+            return null;
+        }
+        ItineraryDayDto dayDto = new ItineraryDayDto();
+        dayDto.setDay(dayEntity.getDayNumber());
+        dayDto.setDate(dayEntity.getDate() != null ? dayEntity.getDate().toString() : null);
+        dayDto.setTheme(dayEntity.getTheme());
+
+        if (dayEntity.getActivities() != null) {
+            List<ItineraryEventDto> eventDtos = dayEntity.getActivities().stream()
+                    .map(this::convertActivityEntityToEventDto) // Map each activity entity
+                    .collect(Collectors.toList());
+            dayDto.setEvents(eventDtos);
+        } else {
+            dayDto.setEvents(new ArrayList<>());
+        }
+        return dayDto;
+    }
+
+    private ItineraryEventDto convertActivityEntityToEventDto(Activity activity) {
+        if (activity == null) {
+            return null;
+        }
+        ItineraryEventDto eventDto = new ItineraryEventDto();
+        eventDto.setType(activity.getType() != null ? activity.getType().name().toLowerCase() : "other"); // Convert enum back to string
+        eventDto.setDescription(activity.getName()); // Use name as description
+
+        // Format LocalDateTime back to String (use consistent format if possible)
+        DateTimeFormatter timeFormatter = DateTimeFormatter.ofPattern("hh:mm a"); // Example: 09:30 AM
+        eventDto.setStartTime(activity.getStartTime() != null ? activity.getStartTime().format(timeFormatter) : null);
+        eventDto.setEndTime(activity.getEndTime() != null ? activity.getEndTime().format(timeFormatter) : null);
+
+        eventDto.setDetails(activity.getDetails());
+        eventDto.setLocation(activity.getLocation());
+        eventDto.setCost(activity.getCost()); // Already String
+        eventDto.setBookingInfo(activity.getBookingInfo());
+        eventDto.setTravelTime(activity.getTravelTime());
+        eventDto.setDistance(activity.getDistance());
+        eventDto.setTransportMode(activity.getTransportMode());
+        eventDto.setWebsite(activity.getWebsite());
+        eventDto.setNotes(activity.getNotes());
+        eventDto.setOpeningHours(activity.getOpeningHours());
+
+        return eventDto;
     }
 }

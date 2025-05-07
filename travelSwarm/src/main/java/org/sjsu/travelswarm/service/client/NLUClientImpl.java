@@ -3,6 +3,7 @@ package org.sjsu.travelswarm.service.client;
 import lombok.extern.slf4j.Slf4j;
 import org.sjsu.travelswarm.model.dto.nlu.NLURequestDto;
 import org.sjsu.travelswarm.model.dto.nlu.NLUResultDto;
+import org.sjsu.travelswarm.model.entity.PlanningSession;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import jakarta.annotation.PostConstruct;
@@ -45,7 +46,7 @@ public class NLUClientImpl implements NLUClient {
     }
 
     @Override
-    public NLUResultDto parseText(String userText) {
+    public NLUResultDto parseText(String userText, PlanningSession currentSession) {
         if (this.nluServiceFullUrl == null || this.nluServiceFullUrl.isBlank()) {
             log.error("NLUClientImpl.parseText - Aborting call: NLU Service Full URL was not configured properly at startup.");
             return createFallbackNluResult("NLU service URL not configured. Critical error.");
@@ -56,7 +57,22 @@ public class NLUClientImpl implements NLUClient {
             return createFallbackNluResult("Empty input received.");
         }
 
-        NLURequestDto requestDto = new NLURequestDto(userText);
+        log.info("NLUClientImpl.parseText - Preparing NLU request for text: '{}' with context from session ID: {}",
+                userText, currentSession != null ? currentSession.getId() : "null");
+
+        // Create the request DTO, populating context from the session
+        NLURequestDto requestDto = new NLURequestDto();
+        requestDto.setUserText(userText);
+
+        if (currentSession != null) {
+            requestDto.setCurrentDestination(currentSession.getDestination());
+            requestDto.setCurrentDurationDays(currentSession.getDurationDays());
+            requestDto.setCurrentStartDate(currentSession.getStartDate());
+            requestDto.setCurrentEndDate(currentSession.getEndDate());
+            requestDto.setCurrentBudget(currentSession.getBudget());
+            requestDto.setCurrentInterests(currentSession.getInterests());
+        }
+
         HttpHeaders headers = new HttpHeaders();
         headers.setContentType(MediaType.APPLICATION_JSON);
         headers.setAccept(Collections.singletonList(MediaType.APPLICATION_JSON));

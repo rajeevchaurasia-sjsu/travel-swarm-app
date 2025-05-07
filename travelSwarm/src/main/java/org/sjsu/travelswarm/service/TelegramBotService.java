@@ -18,6 +18,8 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Pattern;
 
+import static org.sjsu.travelswarm.util.MarkdownUtil.escapeMarkdownV2;
+
 @Service
 @Slf4j
 public class TelegramBotService extends TelegramLongPollingBot {
@@ -47,7 +49,20 @@ public class TelegramBotService extends TelegramLongPollingBot {
             log.info("Received message from chatId {}: '{}'", chatId, userText);
 
             if ("/start".equals(userText)) {
-                sendTextMessage(chatId, "Welcome to TravelSwarm! Tell me about your desired trip: destination, duration/dates, interests, and budget.");
+                sendTextMessage(chatId,
+                        "🌟 *Welcome to TravelSwarm\\!* 🌟\n\n" + // Keep your \\!
+                                "I'm your personal travel planning assistant\\! I can help you create amazing travel experiences\\. Here's what I can do:\n\n" +
+                                "📝 *Available Commands:*\n" +
+                                "• /new \\- Start planning a new adventure\n" + // Keep your \\-
+                                "• /modify \\- Tweak your existing itinerary\n" +
+                                "• /help \\- Show this guide\n\n" +
+                                "🎯 *To plan your perfect trip, just tell me:*\n" +
+                                "• Where you want to go 🌍\n" +
+                                "• When you want to go 📅\n" +
+                                "• Your interests and preferences 🎨\n" +
+                                "• Your budget 💰\n\n" +
+                                "You can either type /new to start planning, or simply tell me where you'd like to go\\! For example: \"I want to visit Paris for 3 days\" or \"Plan a trip to Tokyo\"\\!"
+                );
                 return;
             }
 
@@ -55,7 +70,7 @@ public class TelegramBotService extends TelegramLongPollingBot {
                 conversationService.processTelegramUpdate(chatId, userText);
             } catch (Exception e) {
                 log.error("Error processing update for chatId {}: {}", chatId, e.getMessage(), e);
-                sendTextMessage(chatId, "Sorry, an error occurred while processing your request. Please try again.");
+                sendTextMessage(chatId, "😅 Oops\\! Something went wrong while processing your request\\. Please try again\\!");
             }
         }
     }
@@ -65,160 +80,129 @@ public class TelegramBotService extends TelegramLongPollingBot {
         return this.botUsername;
     }
 
-    public void sendTextMessage(long chatId, String rawText) {
-        if (rawText == null || rawText.isBlank()) {
-            log.warn("Attempted to send null or blank message to chatId {}", chatId);
-            return;
-        }
-
-        // Escape the text first
-        String escapedText = escapeMarkdownV2(rawText);
-
-        if (escapedText.length() <= MAX_MESSAGE_LENGTH) {
-            executeSendMessage(chatId, escapedText);
-        } else {
-            // Message is too long, split it
-            log.info("Message for chatId {} is too long ({} chars). Splitting...", chatId, escapedText.length());
-            List<String> parts = splitMessage(escapedText, MAX_MESSAGE_LENGTH);
-            for (int i = 0; i < parts.size(); i++) {
-                String part = parts.get(i);
-                executeSendMessage(chatId, part);
-                // Slight delay between messages to avoid rate limiting and ensure order
-                if (i < parts.size() - 1) {
-                    try {
-                        Thread.sleep(500); // 0.5 second delay
-                    } catch (InterruptedException e) {
-                        log.warn("Message sending delay interrupted for chatId {}", chatId);
-                        Thread.currentThread().interrupt();
-                    }
-                }
-            }
-            log.info("Sent {} parts for long message to chatId {}", parts.size(), chatId);
-        }
-    }
-
-    private void executeSendMessage(long chatId, String text) {
-        SendMessage sendMessage = SendMessage.builder()
-                .chatId(chatId)
-                .text(text)
-                .parseMode("MarkdownV2")
-                .build();
+    public void sendTextMessage(Long chatId, String text) {
         try {
-            log.info("Sending message to chatId {}: '{}'", chatId, text.substring(0, Math.min(text.length(), 100)) + (text.length() > 100 ? "..." : ""));
-            execute(sendMessage);
-            log.debug("Message part sent successfully to chatId {}", chatId);
-        } catch (TelegramApiException e) {
-            log.error("Failed to send message part to chatId {}: {}", chatId, e.getMessage(), e);
-        } catch (Exception e) {
-            log.error("Unexpected error sending message part to chatId {}: {}", chatId, e.getMessage(), e);
-        }
-    }
-
-    private List<String> splitMessage(String text, int maxLength) {
-        List<String> parts = new ArrayList<>();
-        if (text == null || text.isEmpty()) {
-            return parts;
-        }
-
-        // Split by double newlines to preserve formatting
-        String[] sections = text.split("\n\n", -1);
-        StringBuilder currentPart = new StringBuilder();
-
-        for (String section : sections) {
-            // If adding this section would exceed maxLength, start a new part
-            if (!currentPart.isEmpty() && currentPart.length() + section.length() + 2 > maxLength) {
-                parts.add(currentPart.toString().trim());
-                currentPart = new StringBuilder();
-            }
-
-            // If section itself is too long, split it by single newlines
-            if (section.length() > maxLength) {
-                String[] lines = section.split("\n", -1);
-                for (String line : lines) {
-                    // Check if line contains Markdown formatting
-                    boolean hasMarkdown = line.contains("*") || line.contains("_") || line.contains("[") || line.contains("]");
-                    
-                    if (line.length() > maxLength) {
-                        // If currentPart has content, add it first
-                        if (!currentPart.isEmpty()) {
-                            parts.add(currentPart.toString().trim());
-                            currentPart = new StringBuilder();
-                        }
-                        
-                        // For lines with Markdown, try to split at formatting boundaries
-                        if (hasMarkdown) {
-                            int start = 0;
-                            while (start < line.length()) {
-                                int end = Math.min(start + maxLength, line.length());
-                                if (end < line.length()) {
-                                    // Look for the last formatting boundary before maxLength
-                                    int lastFormat = Math.max(
-                                        Math.max(line.lastIndexOf("*", end), line.lastIndexOf("_", end)),
-                                        Math.max(line.lastIndexOf("[", end), line.lastIndexOf("]", end))
-                                    );
-                                    if (lastFormat > start + maxLength / 2) {
-                                        end = lastFormat;
-                                    } else {
-                                        // Fall back to space or punctuation
-                                        int lastSpace = line.lastIndexOf(' ', end);
-                                        int lastPunct = Math.max(
-                                            Math.max(line.lastIndexOf('.', end), line.lastIndexOf(',', end)),
-                                            Math.max(line.lastIndexOf('!', end), line.lastIndexOf('?', end))
-                                        );
-                                        int breakPoint = Math.max(lastSpace, lastPunct);
-                                        if (breakPoint > start + maxLength / 2) {
-                                            end = breakPoint + 1;
-                                        }
-                                    }
-                                }
-                                parts.add(line.substring(start, end).trim());
-                                start = end;
-                            }
-                        } else {
-                            // For regular lines, split at spaces or punctuation
-                            int start = 0;
-                            while (start < line.length()) {
-                                int end = Math.min(start + maxLength, line.length());
-                                if (end < line.length()) {
-                                    int lastSpace = line.lastIndexOf(' ', end);
-                                    int lastPunct = Math.max(
-                                        Math.max(line.lastIndexOf('.', end), line.lastIndexOf(',', end)),
-                                        Math.max(line.lastIndexOf('!', end), line.lastIndexOf('?', end))
-                                    );
-                                    int breakPoint = Math.max(lastSpace, lastPunct);
-                                    if (breakPoint > start + maxLength / 2) {
-                                        end = breakPoint + 1;
-                                    }
-                                }
-                                parts.add(line.substring(start, end).trim());
-                                start = end;
-                            }
-                        }
-                    } else {
-                        if (!currentPart.isEmpty() && currentPart.length() + line.length() + 1 > maxLength) {
-                            parts.add(currentPart.toString().trim());
-                            currentPart = new StringBuilder();
-                        }
-                        if (!currentPart.isEmpty()) {
-                            currentPart.append("\n");
-                        }
-                        currentPart.append(line);
+            // Split message if it's too long
+            if (text.length() > MAX_MESSAGE_LENGTH) {
+                List<String> parts = splitMessage(text);
+                for (String part : parts) {
+                    try {
+                        executeSendMessage(chatId, part);
+                    } catch (TelegramApiException e) {
+                        log.error("Error sending message part to chat {}: {}", chatId, e.getMessage(), e);
+                        sendFallbackMessage(chatId);
                     }
                 }
             } else {
-                if (!currentPart.isEmpty()) {
-                    currentPart.append("\n\n");
+                try {
+                    executeSendMessage(chatId, text);
+                } catch (TelegramApiException e) {
+                    log.error("Error sending message to chat {}: {}", chatId, e.getMessage(), e);
+                    sendFallbackMessage(chatId);
                 }
+            }
+        } catch (Exception e) {
+            log.error("Error processing message for chat {}: {}", chatId, e.getMessage(), e);
+            sendFallbackMessage(chatId);
+        }
+    }
+
+    private void executeSendMessage(Long chatId, String text) throws TelegramApiException {
+        SendMessage message = new SendMessage();
+        message.setChatId(chatId.toString());
+        message.setText(text);
+        message.enableMarkdownV2(true);
+        message.setParseMode("MarkdownV2");
+        execute(message);
+    }
+
+    private List<String> splitMessage(String text) {
+        List<String> parts = new ArrayList<>();
+        int maxLength = MAX_MESSAGE_LENGTH;
+        
+        // Split by double newlines to preserve formatting
+        String[] sections = text.split("\\n\\n");
+        StringBuilder currentPart = new StringBuilder();
+        
+        for (String section : sections) {
+            if (currentPart.length() + section.length() + 2 > maxLength) {
+                if (currentPart.length() > 0) {
+                    parts.add(currentPart.toString());
+                    currentPart = new StringBuilder();
+                }
+                // If a single section is too long, split it by single newlines
+                if (section.length() > maxLength) {
+                    String[] lines = section.split("\\n");
+                    StringBuilder currentLine = new StringBuilder();
+                    for (String line : lines) {
+                        if (currentLine.length() + line.length() + 1 > maxLength) {
+                            if (currentLine.length() > 0) {
+                                parts.add(currentLine.toString());
+                                currentLine = new StringBuilder();
+                            }
+                            // If a single line is too long, split it by words
+                            if (line.length() > maxLength) {
+                                String[] words = line.split(" ");
+                                StringBuilder currentWord = new StringBuilder();
+                                for (String word : words) {
+                                    if (currentWord.length() + word.length() + 1 > maxLength) {
+                                        if (currentWord.length() > 0) {
+                                            parts.add(currentWord.toString());
+                                            currentWord = new StringBuilder();
+                                        }
+                                        // If a single word is too long, split it by characters
+                                        if (word.length() > maxLength) {
+                                            for (int i = 0; i < word.length(); i += maxLength) {
+                                                parts.add(word.substring(i, Math.min(i + maxLength, word.length())));
+                                            }
+                                        } else {
+                                            currentWord.append(word);
+                                        }
+                                    } else {
+                                        if (currentWord.length() > 0) currentWord.append(" ");
+                                        currentWord.append(word);
+                                    }
+                                }
+                                if (currentWord.length() > 0) {
+                                    parts.add(currentWord.toString());
+                                }
+                            } else {
+                                currentLine.append(line);
+                            }
+                        } else {
+                            if (currentLine.length() > 0) currentLine.append("\n");
+                            currentLine.append(line);
+                        }
+                    }
+                    if (currentLine.length() > 0) {
+                        parts.add(currentLine.toString());
+                    }
+                } else {
+                    currentPart.append(section);
+                }
+            } else {
+                if (currentPart.length() > 0) currentPart.append("\n\n");
                 currentPart.append(section);
             }
         }
-
-        // Add any remaining part
-        if (!currentPart.isEmpty()) {
-            parts.add(currentPart.toString().trim());
+        
+        if (currentPart.length() > 0) {
+            parts.add(currentPart.toString());
         }
-
+        
         return parts;
+    }
+
+    private void sendFallbackMessage(Long chatId) {
+        try {
+            SendMessage message = new SendMessage();
+            message.setChatId(chatId.toString());
+            message.setText("Sorry, there was an error formatting the message. Please try again.");
+            message.disableWebPagePreview();
+            execute(message);
+        } catch (TelegramApiException ex) {
+            log.error("Failed to send fallback message to chat {}: {}", chatId, ex.getMessage(), ex);
+        }
     }
 
     @PostConstruct
@@ -235,35 +219,5 @@ public class TelegramBotService extends TelegramLongPollingBot {
     @PreDestroy
     public void cleanUp() {
         log.info("TelegramBotComponent shutting down.");
-    }
-
-    private String escapeMarkdownV2(String text) {
-        if (text == null) return null;
-        
-        // First escape all special characters
-        String escaped = MARKDOWN_PATTERN.matcher(text).replaceAll("\\\\$0");
-        
-        // Then handle formatting characters
-        // We need to be careful with the order of replacements
-        return escaped
-            .replace("\\*", "*")  // Bold
-            .replace("\\_", "_")  // Italic
-            .replace("\\[", "[")  // Links
-            .replace("\\]", "]")
-            .replace("\\(", "(")
-            .replace("\\)", ")")
-            .replace("\\~", "~")  // Strikethrough
-            .replace("\\`", "`")  // Code
-            // Keep other special characters escaped
-            .replace("\\-", "\\-")  // Keep dash escaped
-            .replace("\\.", "\\.")  // Keep dot escaped
-            .replace("\\!", "\\!")  // Keep exclamation escaped
-            .replace("\\#", "\\#")  // Keep hash escaped
-            .replace("\\+", "\\+")  // Keep plus escaped
-            .replace("\\=", "\\=")  // Keep equals escaped
-            .replace("\\|", "\\|")  // Keep pipe escaped
-            .replace("\\{", "\\{")  // Keep braces escaped
-            .replace("\\}", "\\}")  // Keep braces escaped
-            .replace("\\>", "\\>"); // Keep greater than escaped
     }
 }

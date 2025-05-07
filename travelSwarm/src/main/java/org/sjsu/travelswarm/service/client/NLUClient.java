@@ -1,6 +1,7 @@
 package org.sjsu.travelswarm.service.client;
 
 import org.sjsu.travelswarm.model.dto.nlu.NLUResultDto;
+import org.sjsu.travelswarm.model.entity.PlanningSession;
 
 public interface NLUClient {
 
@@ -9,5 +10,5 @@ public interface NLUClient {
      * @param userText The raw text input from the user.
      * @return NluResultDto containing parsed parameters, or a fallback DTO if the call fails.
      */
-    NLUResultDto parseText(String userText);
+    NLUResultDto parseText(String userText, PlanningSession currentSession);
 }
