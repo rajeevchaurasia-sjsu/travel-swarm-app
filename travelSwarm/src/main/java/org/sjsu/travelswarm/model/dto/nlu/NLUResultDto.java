@@ -22,4 +22,6 @@ public class NLUResultDto {
     private String status;
     @JsonProperty("clarification_question")
     private String clarificationQuestion;
+    @JsonProperty("modification_details")
+    private String modificationDetails;
 }

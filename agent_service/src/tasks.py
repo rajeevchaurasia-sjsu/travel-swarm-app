@@ -62,17 +62,15 @@ def create_planning_task(manager_agent, user_data):
         expected_output=dedent(f"""
                     A complete, optimized, day-by-day itinerary for {duration_calc_str} in {destination}.
                     The output MUST be a JSON object that strictly validates against the FinalItinerary Pydantic model.
-                    Specifically, the 'interests' and 'general_notes' fields MUST be lists of strings. For example:
-                    "interests": ["historical sites", "local food"],
-                    "general_notes": ["Book tickets in advance.", "Wear comfortable shoes."]
-                    If there is only one interest or note, it should still be in a list:
-                    "interests": ["biryani"],
-                    "general_notes": ["Check opening hours."]
-                    If there are no interests or notes, provide an empty list:
-                    "interests": [],
-                    "general_notes": []
 
-                    **Output Format Example (Illustrative - adhere to FinalItinerary model):**
+                    **VERY IMPORTANT TYPE REQUIREMENTS (MANDATORY):**
+                    * `estimatedTotalCost`: MUST be a single floating-point number (e.g., 350.0 or 125.50), NOT a string range (like "300-400 USD") or null unless truly unknown after attempting calculation. If you estimate a range, output the average or midpoint as a float.
+                    * `events.cost`: THIS FIELD MUST ALWAYS BE A STRING. Examples: "25", "Free", "Varies", "10.00", "$5 (parking)". DO NOT output numbers like 25 or 10.0. Always represent costs as strings, even if they are numerical. Always enclose numerical costs in quotes.
+                    * `interests`: MUST be a list of strings (e.g., ["food", "history"]). Use an empty list [] if none.
+                    * `general_notes`: MUST be a list of strings (e.g., ["Note 1.", "Note 2."]). Use an empty list [] if none.
+                    * Ensure fields like `location`, `website`, `opening_hours`, `bookingInfo` within each event are populated whenever possible based on your research.
+
+                    **Output Format Example (Illustrative - adhere to FinalItinerary model and TYPE REQUIREMENTS):**
 
                     {{
                         "destination": "{destination}",
@@ -80,7 +78,7 @@ def create_planning_task(manager_agent, user_data):
                         "start_date": {json.dumps(start_date)},
                         "end_date": {json.dumps(end_date)},
                         "budget": {json.dumps(budget)},
-                        "interests": ["interest1", "interest2"],
+                        "interests": ["interest1", "interest2"], // MUST be list of strings
                         "summary": "A brief trip summary...",
                         "days": [
                             {{
@@ -93,15 +91,31 @@ def create_planning_task(manager_agent, user_data):
                                         "description": "Visit Place X",
                                         "startTime": "10:00 AM",
                                         "endTime": "12:00 PM",
+                                        "location": "123 Main St", // Populate location
+                                        "cost": "25.00", // cost MUST be string
+                                        "website": "https://example.com", // Populate website
+                                        "opening_hours": "10 AM - 5 PM Tue-Sun", // Populate hours
+                                        "bookingInfo": "Optional booking info", // Populate booking
                                         "details": "Some details about Place X"
+                                    }},
+                                    {{
+                                        "type": "food",
+                                        "description": "Lunch Spot",
+                                        "startTime": "12:30 PM",
+                                        "endTime": "01:30 PM",
+                                        "location": "456 Side St", // Populate location
+                                        "cost": "Varies", // cost MUST be string
+                                        "website": null, // Example null website
+                                        "opening_hours": "11 AM - 10 PM Daily", // Populate hours
+                                        "details": "Details..."
                                     }}
                                     // More events
                                 ]
                             }}
                             // More days
                         ],
-                        "estimatedTotalCost": 500.00,
-                        "general_notes": ["General tip 1.", "General tip 2."]
+                        "estimatedTotalCost": 500.0, // MUST be float/number
+                        "general_notes": ["General tip 1.", "General tip 2."] // MUST be list of strings
                     }}
                 """),
         agent=manager_agent, # Assign the task to the Manager Agent instance
