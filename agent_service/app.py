@@ -32,7 +32,7 @@ try:
               raise ValueError(f"GOOGLE_CLOUD_PROJECT env var not set and failed to get from gcloud config: {e}")
 
     # Using Flash for cost/speed. You could potentially use a different, more powerful model.
-    llm_instance = VertexAI(model_name="gemini-2.0-flash-001", project=project_id)
+    llm_instance = VertexAI(model_name="gemini-2.5-flash-preview-04-17", project=project_id)
     print(f"VertexAI LLM Initialized successfully in app.py for project {project_id}.")
 
 except Exception as e:
@@ -99,29 +99,75 @@ def parse_request_endpoint():
     data = request.get_json()
     user_text = data.get("userText")
 
+    current_destination = data.get("currentDestination")
+    current_duration_days = data.get("currentDurationDays")
+    current_start_date = data.get("currentStartDate")
+    current_end_date = data.get("currentEndDate")
+    current_budget = data.get("currentBudget")
+    current_interests = data.get("currentInterests")
+
+    print(f"Raw text to parse: '{user_text}'")
+    print(f"Received Context: Dest='{current_destination}', Dur='{current_duration_days}', Start='{current_start_date}', End='{current_end_date}', Budget='{current_budget}', Interests='{current_interests}'")
+    # --- End NEW context extraction ---
+
     if not user_text:
         print("Error: Missing 'userText' in request body")
         return jsonify({"error": "Missing 'userText' in request body"}), 400
 
-    print(f"Raw text to parse: '{user_text}'")
-
     # Define the NLU Prompt
+    context_summary = []
+    if current_destination: context_summary.append(f"Destination: {current_destination}")
+    if current_duration_days: context_summary.append(f"Duration: {current_duration_days} days")
+    if current_start_date: context_summary.append(f"Start Date: {current_start_date}")
+    if current_end_date: context_summary.append(f"End Date: {current_end_date}")
+    if current_budget: context_summary.append(f"Budget: {current_budget}")
+    if current_interests: context_summary.append(f"Interests: {', '.join(current_interests)}")
+
+    context_prompt_part = "No previous information gathered yet."
+    if context_summary:
+        context_prompt_part = "You have already gathered the following information for this trip:\n" + "\n".join(
+            context_summary)
+
+    current_status = data.get("currentStatus")  # e.g., "COMPLETED", "STARTED", etc.
+    print(f"Received Context Status: '{current_status}'")
+
     nlu_prompt = dedent(f"""
-        Analyze the following user request for travel planning. Extract the key parameters precisely.
-        Respond ONLY with a valid JSON object containing the following keys:
-        - "destination": string (City, Country or specific place) or null if not found/ambiguous.
-        - "duration_days": integer (Number of days for the trip) or null if not specified or ambiguous. Calculate if possible (e.g., "a week" is 7).
-        - "startDate": string (Format YYYY-MM-DD) or null if not specified.
-        - "endDate": string (Format YYYY-MM-DD) or null if not specified.
-        - "budget": string (Categorize into "low", "medium", "high", "luxury") or null if not mentioned or ambiguous.
-        - "interests": list of strings (Keywords representing user interests) or null if none mentioned. Extract specific nouns/activities.
-        - "status": string ('COMPLETE' if destination AND (dates OR duration) are found, otherwise 'NEEDS_CLARIFICATION').
-        - "clarification_question": string (A question to ask the user if status is 'NEEDS_CLARIFICATION', otherwise null). Ask for the most critical missing information first (destination, then duration/dates).
+            You are an NLU system for a travel planning chatbot. Your goal is to understand the user's request, combine it with any previously gathered information, and determine the next step.
 
-        Strictly adhere to the JSON format with only the keys listed above. Do not add any explanations or introductory text.
+            **Previous Context:**
+            {context_prompt_part}
+            Current Planning Status: {current_status}
 
-        User Request: "{user_text}"
-    """)
+            **User's Latest Message:**
+            "{user_text}"
+
+            **Instructions:**
+            1. Analyze the "User's Latest Message" considering the "Previous Context" and "Current Planning Status".
+            2. **If the Current Planning Status is 'COMPLETED' (meaning an itinerary was just shown):**
+               a. Determine if the user's message is a request to *modify* the existing itinerary (e.g., "add more nightlife", "change day 1", "find cheaper hotels", "is Alcatraz included?") OR if it's clearly a request for a *completely new trip* (e.g., "now plan a trip to Tokyo").
+               b. If it's a modification request, set "status" to "MODIFICATION_REQUEST" and extract the core modification instruction into "modification_details" (e.g., "prefer more clubbing nightlife"). All other fields (destination, duration_days etc.) should reflect the *original* itinerary context. Set "clarification_question" to null.
+               c. If it's a request for a *new trip*, ignore the 'COMPLETED' status and proceed as if starting fresh (extract new details, set status to 'COMPLETE' or 'NEEDS_CLARIFICATION' based on the *new* request).
+            3. **If the Current Planning Status is NOT 'COMPLETED':**
+               a. Combine information from "Previous Context" and "User's Latest Message".
+               b. Extract key parameters (destination, duration_days, etc.) based on the combined understanding.
+               c. Determine status: 'COMPLETE' if destination AND (duration OR dates) are known, otherwise 'NEEDS_CLARIFICATION'.
+               d. If 'NEEDS_CLARIFICATION', formulate 'clarification_question' asking for the *most critical missing piece*. Set "modification_details" to null.
+               e. If 'COMPLETE', set 'clarification_question' and 'modification_details' to null.
+
+            **Output Format:**
+            Respond ONLY with a valid JSON object containing the following keys, reflecting the *combined and updated* state OR the modification request:
+            - "destination": string or null (Reflects current understanding OR original itinerary if modifying).
+            - "duration_days": integer or null.
+            - "startDate": string (YYYY-MM-DD) or null.
+            - "endDate": string (YYYY-MM-DD) or null.
+            - "budget": string ("low", "medium", "high", "luxury") or null.
+            - "interests": list of strings or null.
+            - "status": string ('COMPLETE', 'NEEDS_CLARIFICATION', 'MODIFICATION_REQUEST', or 'ERROR').
+            - "clarification_question": string or null (Only if status is 'NEEDS_CLARIFICATION').
+            - "modification_details": string or null (Only if status is 'MODIFICATION_REQUEST').
+
+            Strictly adhere to the JSON format. Do not add explanations.
+        """)
 
     try:
         print("Calling LLM for NLU parsing...")

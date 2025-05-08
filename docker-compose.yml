@@ -34,7 +34,7 @@ services:
     build:
       context: ./agent_service # Specifies the directory containing the Dockerfile
       dockerfile: Dockerfile
-    container_name: travelswarm_agent_service
+#    container_name: travelswarm_agent_service
     environment:
       - PYTHONUNBUFFERED=1 # Ensures Python prints output directly to logs
       - RABBITMQ_HOST=${RABBITMQ_HOST}
@@ -54,8 +54,8 @@ services:
       - rabbitmq
     networks:
       - travelswarm_network
-    ports:
-      - "5001:5001" # Map local port 5001 to container port 5001 for REST API
+#    ports:
+#      - "5001:5001" # Map local port 5001 to container port 5001 for REST API
 
   # --- Spring Boot Service ---
   travel-swarm:

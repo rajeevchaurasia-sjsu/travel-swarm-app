@@ -19,4 +19,6 @@ public class NLURequestDto {
     private String currentEndDate;
     private String currentBudget;
     private List<String> currentInterests;
+
+    private String currentStatus;
 }

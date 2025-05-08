@@ -4,6 +4,7 @@ import lombok.extern.slf4j.Slf4j;
 import org.sjsu.travelswarm.model.dto.nlu.NLURequestDto;
 import org.sjsu.travelswarm.model.dto.nlu.NLUResultDto;
 import org.sjsu.travelswarm.model.entity.PlanningSession;
+import org.sjsu.travelswarm.model.enums.SessionStatus;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import jakarta.annotation.PostConstruct;
@@ -71,6 +72,9 @@ public class NLUClientImpl implements NLUClient {
             requestDto.setCurrentEndDate(currentSession.getEndDate());
             requestDto.setCurrentBudget(currentSession.getBudget());
             requestDto.setCurrentInterests(currentSession.getInterests());
+            requestDto.setCurrentStatus(currentSession.getStatus().name());
+        } else {
+            requestDto.setCurrentStatus(SessionStatus.STARTED.name());
         }
 
         HttpHeaders headers = new HttpHeaders();
