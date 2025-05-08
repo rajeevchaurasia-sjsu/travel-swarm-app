@@ -53,8 +53,8 @@ public class TelegramBotService extends TelegramLongPollingBot {
                         "🌟 *Welcome to TravelSwarm\\!* 🌟\n\n" + // Keep your \\!
                                 "I'm your personal travel planning assistant\\! I can help you create amazing travel experiences\\. Here's what I can do:\n\n" +
                                 "📝 *Available Commands:*\n" +
-                                "• /new \\- Start planning a new adventure\n" + // Keep your \\-
-                                "• /modify \\- Tweak your existing itinerary\n" +
+                                "• /new \\- Start planning a new adventure\n" +
+                                "• /history - View your past itineraries\n" +
                                 "• /help \\- Show this guide\n\n" +
                                 "🎯 *To plan your perfect trip, just tell me:*\n" +
                                 "• Where you want to go 🌍\n" +

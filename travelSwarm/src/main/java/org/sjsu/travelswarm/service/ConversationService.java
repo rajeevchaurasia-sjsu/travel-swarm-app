@@ -1,6 +1,5 @@
 package org.sjsu.travelswarm.service;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.extern.slf4j.Slf4j;
 import org.sjsu.travelswarm.model.dto.FinalItineraryDto;
 import org.sjsu.travelswarm.model.dto.ItineraryDayDto;
@@ -33,7 +32,6 @@ public class ConversationService {
 
     private final NLUClient nluClient;
     private final PlanningRequestPublisher planningRequestPublisher;
-    private final ObjectMapper objectMapper;
     private final PlanningSessionRepository planningSessionRepository;
     private final ItineraryService itineraryService;
     private final TelegramBotService telegramBotService;
@@ -42,14 +40,12 @@ public class ConversationService {
     @Autowired
     public ConversationService(NLUClient nluClient,
                                PlanningRequestPublisher planningRequestPublisher,
-                               ObjectMapper objectMapper,
                                PlanningSessionRepository planningSessionRepository,
                                ItineraryService itineraryService,
                                ItineraryRepository itineraryRepository,
                                @Lazy TelegramBotService telegramBotService) {
         this.nluClient = nluClient;
         this.planningRequestPublisher = planningRequestPublisher;
-        this.objectMapper = objectMapper;
         this.planningSessionRepository = planningSessionRepository;
         this.itineraryService = itineraryService;
         this.telegramBotService = telegramBotService;
@@ -144,20 +140,19 @@ public class ConversationService {
 
         switch (command.toLowerCase()) {
             case "/start":
-                telegramBotService.sendTextMessage(chatId, 
-                    "🌟 *Welcome to TravelSwarm!* 🌟\n\n" +
-                    "I'm your personal travel planning assistant! I can help you create amazing travel experiences. Here's what I can do:\n\n" +
-                    "📝 *Available Commands:*\n" +
-                    "• /new - Start planning a new adventure\n" +
-                     "• /history - View your past itineraries\n" +
-                            "• /view <ID> - View a specific past itinerary\n" +
-                    "• /help - Show this guide\n\n" +
-                    "🎯 *To plan your perfect trip, just tell me:*\n" +
-                    "• Where you want to go 🌍\n" +
-                    "• When you want to go 📅\n" +
-                    "• Your interests and preferences 🎨\n" +
-                    "• Your budget 💰\n\n" +
-                    "You can either type /new to start planning, or simply tell me where you'd like to go! For example: \"I want to visit Paris for 3 days\" or \"Plan a trip to Tokyo\"!"
+                telegramBotService.sendTextMessage(chatId,
+                        "🌟 *Welcome to TravelSwarm\\!* 🌟\n\n" + // Keep your \\!
+                                "I'm your personal travel planning assistant\\! I can help you create amazing travel experiences\\. Here's what I can do:\n\n" +
+                                "📝 *Available Commands:*\n" +
+                                "• /new \\- Start planning a new adventure\n" +
+                                "• /history - View your past itineraries\n" +
+                                "• /help \\- Show this guide\n\n" +
+                                "🎯 *To plan your perfect trip, just tell me:*\n" +
+                                "• Where you want to go 🌍\n" +
+                                "• When you want to go 📅\n" +
+                                "• Your interests and preferences 🎨\n" +
+                                "• Your budget 💰\n\n" +
+                                "You can either type /new to start planning, or simply tell me where you'd like to go\\! For example: \"I want to visit Paris for 3 days\" or \"Plan a trip to Tokyo\"\\!"
                 );
                 break;
             case "/new":
@@ -209,6 +204,7 @@ public class ConversationService {
                             break;
                         }
                     }
+                    log.info("history message till now :: {}", historyMsg);
                     historyMsg.append("\nType `/view <ID>` to see the details of an itinerary\\.");
                     telegramBotService.sendTextMessage(chatId, historyMsg.toString());
                 }
@@ -288,66 +284,11 @@ public class ConversationService {
             // Process the message with NLU
             NLUResultDto nluResult = nluClient.parseText(message, session);
 
-            // Check if NLU detected a modification request
-            if ("MODIFICATION_REQUEST".equals(nluResult.getStatus())) {
-                log.info("NLU detected modification request for session ID {}: {}", session.getId(), nluResult.getModificationDetails());
-                handleModificationRequest(session, nluResult.getModificationDetails()); // Call new handler method
-            } else {
-                // Otherwise, handle NLU result as before (clarification or plan generation)
-                handleNluResult(session, nluResult);
-            }
+            handleNluResult(session, nluResult);
         } catch (Exception e) {
             log.error("Error during NLU processing for chatId {}: {}", chatId, e.getMessage(), e);
             handleError(chatId, e, "NLU processing failed");
         }
-    }
-
-    // --- ADD NEW Method for Modification Flow ---
-    @Transactional // Needs its own transaction? Or part of processTelegramUpdate? Decide later. For now, make it separate.
-    protected void handleModificationRequest(PlanningSession session, String modificationDetails) {
-        long chatId = session.getChatId();
-        Long lastItineraryId = session.getFinalItineraryId();
-
-        if (lastItineraryId == null) {
-            log.error("Modification requested for session ID {}, but no finalItineraryId found.", session.getId());
-            handleError(chatId, new IllegalStateException("No previous itinerary found to modify."), "Modification failed");
-            return;
-        }
-
-        Optional<Itinerary> itineraryOpt = itineraryRepository.findById(lastItineraryId);
-        if (itineraryOpt.isEmpty()) {
-            log.error("Modification requested for session ID {}, but itinerary ID {} not found in database.", session.getId(), lastItineraryId);
-            handleError(chatId, new IllegalStateException("Could not load previous itinerary to modify."), "Modification failed");
-            return;
-        }
-
-        // Convert existing Itinerary back to DTO to send to agent
-        Itinerary existingItinerary = itineraryOpt.get();
-        FinalItineraryDto originalItineraryDto = itineraryService.convertEntityToDto(existingItinerary);
-
-        if (originalItineraryDto == null) {
-            log.error("Failed to convert existing itinerary entity ID {} to DTO for modification.", lastItineraryId);
-            handleError(chatId, new RuntimeException("Failed to prepare existing itinerary for modification."), "Modification failed");
-            return;
-        }
-
-        // TODO: Define ModificationRequestDto class (similar to PlanningRequestDto but includes originalItineraryDto)
-        // TODO: Define new RabbitMQ queue ("modification_requests") in RabbitMQConfig
-        // TODO: Add publisher method in PlanningRequestPublisher for the new DTO and queue
-        // TODO: Create ModificationRequestDto object
-        // TODO: Call new publisher method
-        // TODO: Update session status (e.g., PROCESSING_MODIFICATION - add this to SessionStatus enum)
-        // TODO: Send confirmation to user
-
-        log.info("Modification request for session {} / itinerary {} triggered. Details: {}", session.getId(), lastItineraryId, modificationDetails);
-        telegramBotService.sendTextMessage(chatId, MarkdownUtil.escapeMarkdownV2("Okay, I'll try to update your itinerary for " + originalItineraryDto.getDestination() + " based on your feedback: '" + modificationDetails + "'. This might take a moment..."));
-
-        // --- TEMPORARY ---
-        // Since the Python consumer for modification isn't ready, just set status back
-        // session.setStatus(SessionStatus.FAILED); // Or COMPLETED? Need to decide how mods affect state
-        // planningSessionRepository.save(session);
-        log.warn("Modification handling not fully implemented yet. No request sent to agent service.");
-        // --- END TEMPORARY ---
     }
 
     /**
